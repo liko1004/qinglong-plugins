@@ -1,0 +1,35 @@
+# 敏感信息
+config
+config.sh
+config.json
+config.yaml
+config.yml
+cookie*
+ck*
+.env
+.env.*
+*.token
+xianyushop-token.json
+
+# 日志与临时文件
+logs/
+log/
+*.log
+tmp/
+temp/
+*.tmp
+
+# 依赖
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+
+# 编辑器
+.vscode/
+.idea/
