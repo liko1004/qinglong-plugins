@@ -1,6 +1,6 @@
 # qinglong-plugins
 
-青龙面板自用签到脚本，共 6 个，默认每天 08:00 执行一次（cron 写在文件头部，青龙订阅时会自动建任务）。
+青龙面板自用签到脚本，共 7 个，默认每天 08:00 执行一次（cron 写在文件头部，青龙订阅时会自动建任务）。
 
 ## 脚本一览
 
@@ -12,6 +12,7 @@
 | `azusa.js` | azusa.wiki | 无签到，只保号 | `AZUSA_COOKIE` |
 | `xianyushop.js` | api.xianyushop.shop | 每日签到领余额 | `XIANYU_REFRESH_TOKEN` |
 | `hyperdown_checkin.py` | hyperdown.net | 每日签到领流量 | `HYPERDOWN_COOKIE` |
+| `doubao_checkin.py` | www.doubao.com | 每日签到领 200 活动额度 | `DOUBAO_COOKIE` |
 
 ## Cookie 怎么拿（控制台一行命令）
 
@@ -105,6 +106,30 @@ copy(localStorage.getItem('api_refresh_token'))
 
 依赖 `pynacl`，青龙「依赖管理」里新建一个 Python3 依赖填 `pynacl`，或在容器内 `pip3 install pynacl`。
 
+### doubao_checkin.py —— `DOUBAO_COOKIE`
+
+在 `www.doubao.com` 页面（不是豆包的其它子域）执行 `copy(document.cookie)`，整条粘进环境变量：
+
+```
+sessionid=xxxx; sid_tt=xxxx; ttwid=xxxx; passport_csrf_token=xxxx; ...
+```
+
+几个坑先说在前面：
+
+- **只支持个人账号**。豆包工作版和飞书企业号没有「天天领额度」这个活动，签到接口会回 `710010702`，脚本会如实报「该账号没有可领的签到活动」；
+- **只认国内 IP**，青龙装在国内机器上直接可用，港外/海外节点多半会失败；
+- 活动页本身有「仅支持豆包电脑版参与」的前端环境检测，但**接口不校验**，纯 Cookie 就能打；
+- Cookie 通常几周～几个月失效，失效时接口回 `710012001`，脚本报「登录已失效」，重抓一次即可。
+
+可选变量：
+
+| 变量 | 用途 |
+|---|---|
+| `DOUBAO_UA` | 覆盖默认 User-Agent，默认是 Windows 版 Chrome |
+| `DOUBAO_EXTRA_HEADERS` | JSON 对象，往请求里追加头，如 `{"x-tt-passport-csrf-token":"xxx"}` |
+
+签到请求本身服务端幂等（已签过返回 `idempotent: true`，不重复发放），所以一天多跑几次不会有副作用。`detail` 那次只读请求用来取活动额度累计值，失败时该行直接省略，不影响签到结论。
+
 ## 多账号怎么配
 
 统一规则：**同一个环境变量里用 `&` 分隔**，脚本按顺序逐个执行（串行，不并发）。
@@ -116,6 +141,7 @@ AZUSA_COOKIE    = cookie1&cookie2
 CODE99_COOKIE   = UID=1,session=aaa&UID=2,session=bbb
 XIANYU_REFRESH_TOKEN = token1&token2
 HYPERDOWN_COOKIE     = a@x.com,pw1&b@x.com,pw2
+DOUBAO_COOKIE        = cookie1&cookie2
 ```
 
 注意两点：
@@ -132,6 +158,16 @@ HYPERDOWN_COOKIE     = a@x.com,pw1&b@x.com,pw2
 【魔力值：1234.5】
 【获得：5 魔力值】
 【连续签到：3 天】
+```
+
+站点页面上没有的字段会整行省略，不写「未知」。豆包的样张（已签到时没有【获得】行）：
+
+```
+豆包 【签到成功】
+
+【获得：200 活动额度】
+【连续签到：3 天】
+【活动额度累计：1500】
 ```
 
 ## 安全
