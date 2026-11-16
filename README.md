@@ -124,8 +124,11 @@ hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; session
 
 `sessionid` 是关键，缺它一切免谈——而且它不在控制台里，只能从请求头来。
 
+如果更习惯 **Application → Storage → Cookies** 那个表格，也可以：只取 `sessionid` 那一行的 **Value**，自己拼成 `sessionid=xxx` 填进去。注意别把整行连属性一起抄（`ttwid=xxx; Max-Age=...; Domain=.doubao.com; Path=/; HttpOnly` 这种），那串是表格的显示格式，不是 Cookie 请求头。脚本会把 `Max-Age` / `Expires` / `Domain` / `Path` / `HttpOnly` / `Secure` / `SameSite` 这些属性剔掉，但**值本身选错了它救不了你**。
+
 几个坑先说在前面：
 
+- **`ttwid` 不是登录态**。它只是设备指纹，单独带它打接口照样回 `710012001`。名字里带 `sid` 的 `x-tt-multi-sids`、`hook_slardar_session_id` 也都不管用，能鉴权的只有 `sessionid`；
 - **只支持个人账号**。豆包工作版和飞书企业号没有「天天领额度」这个活动，签到接口会回 `710010702`，脚本会如实报「该账号没有可领的签到活动」；
 - **飞书登录的号要留意**：Cookie 里带 `feishu_dpop_keypair` 或 `LARK_SUITE_DPOP`，说明这个豆包号是用飞书登的，多半是企业号，回 `710010702`，这种号不必再折腾；
 - **只认国内 IP**，青龙装在国内机器上直接可用，港外/海外节点多半会失败；

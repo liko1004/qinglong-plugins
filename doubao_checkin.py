@@ -38,6 +38,16 @@ except ValueError:
     print("[警告] DOUBAO_EXTRA_HEADERS 不是合法 JSON，已忽略")
     EXTRA = {}
 
+# DevTools 的 Cookies 表格直接复制会带 Max-Age / Domain / Path 这类属性，剔掉再发
+COOKIE_ATTRS = {"max-age", "expires", "domain", "path", "httponly", "secure",
+                "samesite", "priority", "partitioned", "size"}
+
+
+def clean_cookie(raw):
+    return "; ".join(s.strip() for s in raw.split(";")
+                     if s.strip()
+                     and s.split("=", 1)[0].strip().lower() not in COOKIE_ATTRS)
+
 
 def post(url, cookie, body, timeout=20):
     data = json.dumps(body, separators=(",", ":")).encode()
@@ -110,7 +120,8 @@ def notify(title, content):
         return
 
 
-def run_one(cookie):
+def run_one(raw):
+    cookie = clean_cookie(raw)
     st, js = post(CHECKIN, cookie, {"scene": SCENE})
     if st == -1:
         return {"err": js}
@@ -145,9 +156,9 @@ def main():
         return
 
     results = []
-    for cookie in ACCOUNTS:
+    for raw in ACCOUNTS:
         try:
-            results.append(run_one(cookie))
+            results.append(run_one(raw))
         except Exception as e:
             results.append({"err": "执行异常：%s" % e})
 
