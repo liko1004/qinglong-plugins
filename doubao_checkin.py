@@ -5,8 +5,11 @@
 
 cron: 0 8 * * *
 
+流程：launch 定位活动组 → detail 读每日签到任务 → 已签则跳过，未签则领取
+
 变量：DOUBAO_COOKIE —— www.doubao.com 的完整 Cookie，多账号用 & 分隔
       DOUBAO_UA / DOUBAO_EXTRA_HEADERS —— 可选，覆盖 UA、追加请求头
+      DOUBAO_QUERY_ONLY=1 —— 只查状态，不发领取请求
 依赖：无
 """
 
@@ -18,17 +21,33 @@ import urllib.request
 
 SITE = "豆包"
 BASE = "https://www.doubao.com"
-CHECKIN = BASE + "/alice/ug/campaign/landing/checkin"
-SCENE = "pc_incentive_task_mvp_v3"
+LAUNCH = "/alice/user/launch"
+DETAIL = "/alice/ug/campaign/v3/detail/"
+CHECKIN = "/alice/ug/campaign/landing/checkin"
+GROUP = "pc_incentive_task_mvp_v3"
+
+# 活动接口要求的一串客户端标识，少一个就回 invalid param（实测）
+QS = ("aid=1044603&real_aid=1044603&device_platform=web&version_code=20800"
+      "&samantha_web=1&web_platform=desktop&doubao_device_platform=desktop"
+      "&client_platform=pc_client&pkg_type=release_version&runtime=web"
+      "&runtime_version=3.42.2&pc_version=2.33.5&doubao_pc_version=2.33.5"
+      "&use-olympus-account=1&language=zh&region=CN&sys_region=CN")
+
 UA = (os.environ.get("DOUBAO_UA", "").strip()
       or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
          "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
 ACCOUNTS = [s.strip() for s in
             os.environ.get("DOUBAO_COOKIE", "").split("&") if s.strip()]
+QUERY_ONLY = os.environ.get("DOUBAO_QUERY_ONLY", "").strip() == "1"
 
-# 710012001 登录失效；710010702 Cookie 有效但这个号没有该活动（工作版 / 飞书企业号）
+# 710012001 登录失效；710010702 领取接口要官方客户端现算的风控字段
 CODE_AUTH = 710012001
-CODE_NO_ACTIVITY = 710010702
+CODE_SDK = 710010702
+
+AUTH_MSG = ("登录已失效，请重抓 Cookie：sessionid 是 HttpOnly，document.cookie 读不到，"
+            "要从 F12 → Network → 请求头 Cookie 整行复制")
+SDK_HINT = ["【原因：领取接口要官方客户端现算的风控字段，纯 Cookie 算不出来】",
+            "【做法：在豆包电脑版点一次「立即签到」，本脚本负责回读状态】"]
 
 try:
     EXTRA = json.loads(os.environ.get("DOUBAO_EXTRA_HEADERS") or "{}")
@@ -48,17 +67,19 @@ def clean_cookie(raw):
                      and s.split("=", 1)[0].strip().lower() not in COOKIE_ATTRS)
 
 
-def post(url, cookie, body, timeout=20):
+def post(path, cookie, body, timeout=20):
     data = json.dumps(body, separators=(",", ":")).encode()
     hdr = {"Accept": "application/json, text/plain, */*",
            "Content-Type": "application/json",
+           "Agw-Js-Conv": "str",
            "Origin": BASE,
-           "Referer": BASE + "/pc/agent-explore",
+           "Referer": BASE + "/chat/",
            "User-Agent": UA,
            "Cookie": cookie}
     hdr.update(EXTRA)
 
-    req = urllib.request.Request(url, data=data, headers=hdr, method="POST")
+    req = urllib.request.Request(BASE + path + "?" + QS, data=data,
+                                 headers=hdr, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             st, raw = r.status, r.read().decode("utf-8", "replace")
@@ -73,13 +94,107 @@ def post(url, cookie, body, timeout=20):
         return st, raw
 
 
-def body_lines(data, already=False):
+def msg_of(js):
+    if isinstance(js, dict):
+        return js.get("msg") or js.get("message") or str(js)[:160]
+    return str(js)[:160]
+
+
+def launch(cookie):
+    """定位当前账号的活动组，拿不到就退回默认组。"""
+    st, js = post(LAUNCH, cookie, {})
+    if st == -1:
+        raise RuntimeError(js)
+    if st in (401, 403) or (isinstance(js, dict) and js.get("code") == CODE_AUTH):
+        raise RuntimeError(AUTH_MSG)
+    if not isinstance(js, dict) or js.get("code") != 0:
+        raise RuntimeError("读取活动入口失败（HTTP %s）：%s" % (st, msg_of(js)))
+    info = ((js.get("data") or {}).get("ug_campaign_info") or {})
+    return info.get("campaign_group_code") or GROUP
+
+
+def read(cookie, group):
+    """读活动详情，返回 (签到任务列表, 累计额度)。"""
+    st, js = post(DETAIL, cookie, {"campaign_group_code": group})
+    if st == -1:
+        raise RuntimeError(js)
+    if st in (401, 403):
+        raise RuntimeError("登录已失效，请重新抓取 Cookie（HTTP %s）" % st)
+    if not isinstance(js, dict):
+        raise RuntimeError("活动详情返回非 JSON（HTTP %s）：%s" % (st, str(js)[:160]))
+    if js.get("code") == CODE_AUTH:
+        raise RuntimeError(AUTH_MSG)
+    if js.get("code") != 0:
+        raise RuntimeError("读取活动详情失败 code=%s %s" % (js.get("code"), msg_of(js)))
+
+    data = js.get("data") if isinstance(js.get("data"), dict) else {}
+    tasks = [t for t in (data.get("tasks") or [])
+             if isinstance(t, dict) and (isinstance(t.get("daily_checkin"), dict)
+                                        or t.get("task_kind") == "daily_signin")]
+    total = (data.get("progress") or {}).get("total_amount")
+    return tasks, total
+
+
+def body_lines(daily, total, got=None):
     lines = []
-    if not already and data.get("reward_amount"):
-        lines.append("【获得：%s 活动额度】" % data["reward_amount"])
-    if data.get("continuous_days") not in (None, ""):
-        lines.append("【连续签到：%s 天】" % data["continuous_days"])
+    if got:
+        lines.append("【获得：%s 活动额度】" % got)
+    if daily.get("continuous_days") not in (None, ""):
+        lines.append("【连续签到：%s 天】" % daily["continuous_days"])
+    if total not in (None, ""):
+        lines.append("【额度累计：%s】" % total)
     return lines or ["【结果：今日签到已完成】"]
+
+
+def claim(cookie, group, daily, total):
+    st, js = post(CHECKIN, cookie, {"scene": group})
+    if st == -1:
+        raise RuntimeError(js)
+    if st in (401, 403):
+        raise RuntimeError("登录已失效，请重新抓取 Cookie（HTTP %s）" % st)
+    if not isinstance(js, dict):
+        raise RuntimeError("领取接口返回非 JSON（HTTP %s）：%s" % (st, str(js)[:160]))
+
+    code = js.get("code")
+    if code == CODE_AUTH:
+        raise RuntimeError(AUTH_MSG)
+    if code == CODE_SDK:
+        return {"status": "需手动签到", "body": body_lines(daily, total) + SDK_HINT}
+    if code != 0:
+        raise RuntimeError("领取失败 code=%s %s" % (code, msg_of(js)))
+
+    data = js.get("data") if isinstance(js.get("data"), dict) else {}
+    if data.get("checked_in") is False:
+        raise RuntimeError("领取未生效：服务端没把今日置为已签，稍后重跑一次")
+    if data.get("continuous_days") not in (None, ""):
+        daily = dict(daily, continuous_days=data["continuous_days"])
+    try:
+        total = read(cookie, group)[1] or total   # 回读一次拿最新累计额度
+    except RuntimeError:
+        pass
+    return {"status": "已签到" if data.get("idempotent") else "签到成功",
+            "body": body_lines(daily, total,
+                               None if data.get("idempotent") else data.get("reward_amount"))}
+
+
+def run_one(raw):
+    cookie = clean_cookie(raw)
+    try:
+        group = launch(cookie)
+        tasks, total = read(cookie, group)
+        if not tasks:
+            raise RuntimeError("该账号没有「每日签到」任务：活动未投放，或工作版 / 企业号不参与")
+        if len(tasks) > 1:
+            raise RuntimeError("活动结构异常：找到 %d 个签到任务，已放弃领取" % len(tasks))
+
+        daily = tasks[0].get("daily_checkin") or {}
+        if daily.get("checked_in_today") is True:
+            return {"status": "已签到", "body": body_lines(daily, total)}
+        if QUERY_ONLY:
+            return {"status": "待签到", "body": body_lines(daily, total)}
+        return claim(cookie, group, daily, total)
+    except RuntimeError as e:
+        return {"err": str(e)}
 
 
 def notify(title, content):
@@ -105,36 +220,6 @@ def notify(title, content):
         print("[通知] 推送失败(code=%s)：%s —— 请到青龙「系统设置 → 通知配置」启用并测试一个渠道"
               % (res.get("code"), res.get("message") or "未知原因"))
         return
-
-
-def run_one(raw):
-    cookie = clean_cookie(raw)
-    st, js = post(CHECKIN, cookie, {"scene": SCENE})
-    if st == -1:
-        return {"err": js}
-    if st in (401, 403):
-        return {"err": "登录已失效，请重新抓取 Cookie（HTTP %s）" % st}
-    if not isinstance(js, dict):
-        return {"err": "签到接口返回非 JSON（HTTP %s）：%s" % (st, str(js)[:200])}
-
-    code = js.get("code")
-    msg = js.get("msg") or js.get("message") or ""
-    if code == CODE_AUTH:
-        return {"err": "登录已失效%s，请重抓 Cookie：sessionid 是 HttpOnly，"
-                       "document.cookie 读不到，要从 F12 → Network → 请求头 Cookie 整行复制"
-                       % ("（%s）" % msg if msg else "")}
-    if code == CODE_NO_ACTIVITY:
-        return {"err": "该账号没有可领的签到活动：仅豆包个人账号参与，工作版 / 飞书企业号不支持"}
-    if code != 0:
-        return {"err": "签到失败 code=%s %s" % (code, msg or str(js)[:160])}
-
-    data = js.get("data") if isinstance(js.get("data"), dict) else {}
-    # 领取接口服务端幂等：已签过返回 idempotent=true，不会重复发放
-    already = bool(data.get("idempotent"))
-    # 额度累计要另打 /v3/detail，那个接口参数口径不稳（invalid param / GET 404），
-    # 不值得为一行数字多一次请求
-    return {"status": "已签到" if already else "签到成功",
-            "body": body_lines(data, already)}
 
 
 def main():

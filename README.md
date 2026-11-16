@@ -12,7 +12,7 @@
 | `azusa.js` | azusa.wiki | 无签到，只保号 | `AZUSA_COOKIE` |
 | `xianyushop.js` | api.xianyushop.shop | 每日签到领余额 | `XIANYU_REFRESH_TOKEN` |
 | `hyperdown_checkin.py` | hyperdown.net | 每日签到领流量 | `HYPERDOWN_COOKIE` |
-| `doubao_checkin.py` | www.doubao.com | 每日签到领 200 活动额度 | `DOUBAO_COOKIE` |
+| `doubao_checkin.py` | www.doubao.com | 每日签到领活动额度 | `DOUBAO_COOKIE` |
 
 ## Cookie 怎么拿（控制台一行命令）
 
@@ -129,11 +129,18 @@ hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; session
 几个坑先说在前面：
 
 - **`ttwid` 不是登录态**。它只是设备指纹，单独带它打接口照样回 `710012001`。名字里带 `sid` 的 `x-tt-multi-sids`、`hook_slardar_session_id` 也都不管用，能鉴权的只有 `sessionid`；
-- **只支持个人账号**。豆包工作版和飞书企业号没有「天天领额度」这个活动，签到接口会回 `710010702`，脚本会如实报「该账号没有可领的签到活动」；
-- **飞书登录的号要留意**：Cookie 里带 `feishu_dpop_keypair` 或 `LARK_SUITE_DPOP`，说明这个豆包号是用飞书登的，多半是企业号，回 `710010702`，这种号不必再折腾；
 - **只认国内 IP**，青龙装在国内机器上直接可用，港外/海外节点多半会失败；
-- 活动页本身有「仅支持豆包电脑版参与」的前端环境检测，但**接口不校验**，纯 Cookie 就能打；
 - Cookie 通常几周～几个月失效，失效时接口回 `710012001`，脚本报「登录已失效」，重抓一次即可。
+
+几个错误码别混：
+
+| 返回 | 含义 | 脚本怎么报 |
+|---|---|---|
+| `710012001` | 登录态失效 | 登录已失效，按上面重抓 Cookie |
+| `710010702` | Cookie 有效，但领取请求缺官方客户端运行时生成的风控字段（`biz_params` / `AgwCommonParam`） | 需手动签到，附原因和做法 |
+| 无 `daily_signin` 任务 | 这个号的活动面板里只有聊天任务 | 该账号没有「每日签到」任务 |
+
+`710010702` 的文案是误导性的「系统错误」，它和「账号没活动」不是一回事。脚本**不伪造**那两个风控字段，遇到就如实报，所以不要拿它当故障反复重试。
 
 可选变量：
 
@@ -141,8 +148,16 @@ hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; session
 |---|---|
 | `DOUBAO_UA` | 覆盖默认 User-Agent，默认是 Windows 版 Chrome |
 | `DOUBAO_EXTRA_HEADERS` | JSON 对象，往请求里追加头，如 `{"x-tt-passport-csrf-token":"xxx"}` |
+| `DOUBAO_QUERY_ONLY=1` | 只查状态，不发领取请求 |
 
-签到请求本身服务端幂等（已签过返回 `idempotent: true`，不重复发放），所以一天多跑几次不会有副作用。**每次运行只打一个请求**——活动额度累计要另打 `/alice/ug/campaign/v3/detail`，那个接口的参数口径不稳（`campaign_group_code` / `campaign_code` 都回 `invalid param`，GET 直接 404），不值得为一行数字多打一次。
+### 它怎么跑
+
+1. `POST /alice/user/launch` —— 定位当前账号的活动组，拿不到就退回默认的 `pc_incentive_task_mvp_v3`；
+2. `POST /alice/ug/campaign/v3/detail/` —— 读任务列表，挑出**唯一**的 `daily_checkin` 任务，顺带取 `progress.total_amount` 累计额度；
+3. 已签（`checked_in_today=true`）到此为止，**不发写请求**；未签才调 `POST /alice/ug/campaign/landing/checkin`；
+4. 领取成功后回读一次详情，用最新的累计额度收尾。
+
+这套请求必须带一串客户端标识（`aid=1044603`、`client_platform=pc_client`、`runtime_version=3.42.2` 等）和 `Agw-Js-Conv: str` 请求头，少一个就回 `invalid param`。以前查不到状态就是漏了这些。领取接口本身服务端幂等（已签返回 `idempotent: true`，不重复发放），一天多跑几次没有副作用。
 
 ## 多账号怎么配
 
@@ -181,6 +196,18 @@ DOUBAO_COOKIE        = cookie1&cookie2
 
 【获得：200 活动额度】
 【连续签到：3 天】
+【额度累计：1500】
+```
+
+领取被风控字段挡住时，标题换成 `豆包 【需手动签到】`，正文保留状态并附原因：
+
+```
+豆包 【需手动签到】
+
+【连续签到：0 天】
+【额度累计：1600】
+【原因：领取接口要官方客户端现算的风控字段，纯 Cookie 算不出来】
+【做法：在豆包电脑版点一次「立即签到」，本脚本负责回读状态】
 ```
 
 ## 安全
