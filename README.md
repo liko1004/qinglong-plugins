@@ -1,6 +1,6 @@
 # qinglong-plugins
 
-青龙面板自用签到脚本，共 7 个，默认每天 08:00 执行一次（cron 写在文件头部，青龙订阅时会自动建任务）。
+青龙面板自用签到脚本，共 6 个，默认每天 08:00 执行一次（cron 写在文件头部，青龙订阅时会自动建任务）。
 
 ## 脚本一览
 
@@ -12,13 +12,10 @@
 | `azusa.js` | azusa.wiki | 无签到，只保号 | `AZUSA_COOKIE` |
 | `xianyushop.js` | api.xianyushop.shop | 每日签到领余额 | `XIANYU_REFRESH_TOKEN` |
 | `hyperdown_checkin.py` | hyperdown.net | 每日签到领流量 | `HYPERDOWN_COOKIE` |
-| `doubao_checkin.py` | www.doubao.com | 每日签到领活动额度 | `DOUBAO_COOKIE` |
 
 ## Cookie 怎么拿（控制台一行命令）
 
 绝大多数站点的套路都一样：浏览器登录后按 `F12`，切到 **Console（控制台）**，粘一行命令回车，把输出整段复制到青龙环境变量里。
-
-> **例外是豆包**：它的 `sessionid` 标了 HttpOnly，控制台读不到，必须走 Network 面板，见下方 [doubao_checkin.py](#doubao_checkinpy--doubao_cookie) 一节。
 
 通用命令，绝大多数站点直接可用：
 
@@ -41,7 +38,7 @@ document.cookie.split('; ').filter(s => /^c_secure_/.test(s)).join('; ')
 ```
 
 > 有两点要注意：
-> - 标了 `HttpOnly` 的 Cookie 控制台读不到，这时输出会偏少甚至为空，改用 **Network → 刷新 → 任意请求 → Request Headers → `Cookie:`** 整行复制，那一段一定完整。**豆包就是这种情况**——控制台复制出来的那份看着字段很多（`x-tt-multi-sids`、`flow_cur_user_sec_id` 一应俱全），但缺了真正管鉴权的 `sessionid`，接口一律回 `710012001 登录已过期`；
+> - 标了 `HttpOnly` 的 Cookie 控制台读不到，这时输出会偏少甚至为空，改用 **Network → 刷新 → 任意请求 → Request Headers → `Cookie:`** 整行复制，那一段一定完整；
 > - 命令要在站点自己的域名页面下执行（比如 `www.pttime.org`），在别的标签页跑拿到的会是别的站点的 cookie。
 
 ## 各脚本的凭证格式
@@ -108,57 +105,6 @@ copy(localStorage.getItem('api_refresh_token'))
 
 依赖 `pynacl`，青龙「依赖管理」里新建一个 Python3 依赖填 `pynacl`，或在容器内 `pip3 install pynacl`。
 
-### doubao_checkin.py —— `DOUBAO_COOKIE`
-
-**别用 `copy(document.cookie)`**。豆包的 `sessionid` 是 HttpOnly，控制台那份里根本没有它，粘进去必然回 `710012001`。正确姿势：
-
-1. `www.doubao.com` 登录后按 `F12`，切到 **Network**；
-2. 刷新页面，点任意一条发往 `www.doubao.com` 的请求；
-3. 右侧 **Request Headers → `Cookie:`**，把冒号后面**整行**复制进环境变量。
-
-值形如：
-
-```
-hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; sessionid=xxxx; sid_tt=xxxx; ttwid=xxxx; ...
-```
-
-`sessionid` 是关键，缺它一切免谈——而且它不在控制台里，只能从请求头来。
-
-如果更习惯 **Application → Storage → Cookies** 那个表格，也可以：只取 `sessionid` 那一行的 **Value**，自己拼成 `sessionid=xxx` 填进去。注意别把整行连属性一起抄（`ttwid=xxx; Max-Age=...; Domain=.doubao.com; Path=/; HttpOnly` 这种），那串是表格的显示格式，不是 Cookie 请求头。脚本会把 `Max-Age` / `Expires` / `Domain` / `Path` / `HttpOnly` / `Secure` / `SameSite` 这些属性剔掉，但**值本身选错了它救不了你**。
-
-几个坑先说在前面：
-
-- **`ttwid` 不是登录态**。它只是设备指纹，单独带它打接口照样回 `710012001`。名字里带 `sid` 的 `x-tt-multi-sids`、`hook_slardar_session_id` 也都不管用，能鉴权的只有 `sessionid`；
-- **只认国内 IP**，青龙装在国内机器上直接可用，港外/海外节点多半会失败；
-- Cookie 通常几周～几个月失效，失效时接口回 `710012001`，脚本报「登录已失效」，重抓一次即可。
-
-几个错误码别混：
-
-| 返回 | 含义 | 脚本怎么报 |
-|---|---|---|
-| `710012001` | 登录态失效 | 登录已失效，按上面重抓 Cookie |
-| `710010702` | Cookie 有效，但领取请求缺官方客户端运行时生成的风控字段（`biz_params` / `AgwCommonParam`） | 需手动签到，附原因和做法 |
-| 无 `daily_signin` 任务 | 这个号的活动面板里只有聊天任务 | 该账号没有「每日签到」任务 |
-
-`710010702` 的文案是误导性的「系统错误」，它和「账号没活动」不是一回事。脚本**不伪造**那两个风控字段，遇到就如实报，所以不要拿它当故障反复重试。
-
-可选变量：
-
-| 变量 | 用途 |
-|---|---|
-| `DOUBAO_UA` | 覆盖默认 User-Agent，默认是 Windows 版 Chrome |
-| `DOUBAO_EXTRA_HEADERS` | JSON 对象，往请求里追加头，如 `{"x-tt-passport-csrf-token":"xxx"}` |
-| `DOUBAO_QUERY_ONLY=1` | 只查状态，不发领取请求 |
-
-### 它怎么跑
-
-1. `POST /alice/user/launch` —— 定位当前账号的活动组，拿不到就退回默认的 `pc_incentive_task_mvp_v3`；
-2. `POST /alice/ug/campaign/v3/detail/` —— 读任务列表，挑出**唯一**的 `daily_checkin` 任务，顺带取 `progress.total_amount` 累计额度；
-3. 已签（`checked_in_today=true`）到此为止，**不发写请求**；未签才调 `POST /alice/ug/campaign/landing/checkin`；
-4. 领取成功后回读一次详情，用最新的累计额度收尾。
-
-这套请求必须带一串客户端标识（`aid=1044603`、`client_platform=pc_client`、`runtime_version=3.42.2` 等）和 `Agw-Js-Conv: str` 请求头，少一个就回 `invalid param`。以前查不到状态就是漏了这些。领取接口本身服务端幂等（已签返回 `idempotent: true`，不重复发放），一天多跑几次没有副作用。
-
 ## 多账号怎么配
 
 统一规则：**同一个环境变量里用 `&` 分隔**，脚本按顺序逐个执行（串行，不并发）。
@@ -170,7 +116,6 @@ AZUSA_COOKIE    = cookie1&cookie2
 CODE99_COOKIE   = UID=1,session=aaa&UID=2,session=bbb
 XIANYU_REFRESH_TOKEN = token1&token2
 HYPERDOWN_COOKIE     = a@x.com,pw1&b@x.com,pw2
-DOUBAO_COOKIE        = cookie1&cookie2
 ```
 
 注意两点：
@@ -189,26 +134,7 @@ DOUBAO_COOKIE        = cookie1&cookie2
 【连续签到：3 天】
 ```
 
-站点页面上没有的字段会整行省略，不写「未知」。豆包的样张（已签到时没有【获得】行）：
-
-```
-豆包 【签到成功】
-
-【获得：200 活动额度】
-【连续签到：3 天】
-【额度累计：1500】
-```
-
-领取被风控字段挡住时，标题换成 `豆包 【需手动签到】`，正文保留状态并附原因：
-
-```
-豆包 【需手动签到】
-
-【连续签到：0 天】
-【额度累计：1600】
-【原因：领取接口要官方客户端现算的风控字段，纯 Cookie 算不出来】
-【做法：在豆包电脑版点一次「立即签到」，本脚本负责回读状态】
-```
+站点页面上没有的字段会整行省略，不写「未知」。
 
 ## 安全
 
