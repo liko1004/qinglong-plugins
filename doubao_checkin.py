@@ -19,7 +19,6 @@ import urllib.request
 SITE = "豆包"
 BASE = "https://www.doubao.com"
 CHECKIN = BASE + "/alice/ug/campaign/landing/checkin"
-DETAIL = BASE + "/alice/ug/campaign/v3/detail/"
 SCENE = "pc_incentive_task_mvp_v3"
 UA = (os.environ.get("DOUBAO_UA", "").strip()
       or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -74,24 +73,12 @@ def post(url, cookie, body, timeout=20):
         return st, raw
 
 
-def total_quota(cookie):
-    """活动赠送额度累计值。只读，拿不到就省略这一行，不影响签到结论。"""
-    st, js = post(DETAIL, cookie, {"campaign_group_code": SCENE}, timeout=15)
-    if st != 200 or not isinstance(js, dict) or js.get("code"):
-        return None
-    data = js.get("data")
-    prog = data.get("progress") if isinstance(data, dict) else None
-    return prog.get("total_amount") if isinstance(prog, dict) else None
-
-
-def body_lines(data, total=None, already=False):
+def body_lines(data, already=False):
     lines = []
     if not already and data.get("reward_amount"):
         lines.append("【获得：%s 活动额度】" % data["reward_amount"])
     if data.get("continuous_days") not in (None, ""):
         lines.append("【连续签到：%s 天】" % data["continuous_days"])
-    if total not in (None, ""):
-        lines.append("【活动额度累计：%s】" % total)
     return lines or ["【结果：今日签到已完成】"]
 
 
@@ -144,8 +131,10 @@ def run_one(raw):
     data = js.get("data") if isinstance(js.get("data"), dict) else {}
     # 领取接口服务端幂等：已签过返回 idempotent=true，不会重复发放
     already = bool(data.get("idempotent"))
+    # 额度累计要另打 /v3/detail，那个接口参数口径不稳（invalid param / GET 404），
+    # 不值得为一行数字多一次请求
     return {"status": "已签到" if already else "签到成功",
-            "body": body_lines(data, total_quota(cookie), already)}
+            "body": body_lines(data, already)}
 
 
 def main():

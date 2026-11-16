@@ -142,7 +142,7 @@ hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; session
 | `DOUBAO_UA` | 覆盖默认 User-Agent，默认是 Windows 版 Chrome |
 | `DOUBAO_EXTRA_HEADERS` | JSON 对象，往请求里追加头，如 `{"x-tt-passport-csrf-token":"xxx"}` |
 
-签到请求本身服务端幂等（已签过返回 `idempotent: true`，不重复发放），所以一天多跑几次不会有副作用。`detail` 那次只读请求用来取活动额度累计值，失败时该行直接省略，不影响签到结论。
+签到请求本身服务端幂等（已签过返回 `idempotent: true`，不重复发放），所以一天多跑几次不会有副作用。**每次运行只打一个请求**——活动额度累计要另打 `/alice/ug/campaign/v3/detail`，那个接口的参数口径不稳（`campaign_group_code` / `campaign_code` 都回 `invalid param`，GET 直接 404），不值得为一行数字多打一次。
 
 ## 多账号怎么配
 
@@ -181,7 +181,6 @@ DOUBAO_COOKIE        = cookie1&cookie2
 
 【获得：200 活动额度】
 【连续签到：3 天】
-【活动额度累计：1500】
 ```
 
 ## 安全
