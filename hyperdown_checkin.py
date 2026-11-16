@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Hyperdown (hyperdown.net) 每日签到 —— 青龙面板
+任务名：new Env('Hyperdown签到')
 
-cron: 0 8 * * *
+cron: 55 7 * * *
 
 变量：HYPERDOWN_COOKIE —— 站点登录账号与密码，格式 账号,密码，多账号用 & 分隔
 依赖：pip3 install pynacl

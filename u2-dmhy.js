@@ -1,7 +1,8 @@
 /**
  * U2 动漫花园 —— u2.dmhy.org PT 签到（青龙面板）
+ * 任务名：new Env('U2动漫花园签到')
  *
- * cron: 0 8 * * *
+ * cron: 51 7 * * *
  *
  * 变量：U2_COOKIE —— 站点 Cookie，多账号用 & 分隔
  *

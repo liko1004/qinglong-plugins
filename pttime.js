@@ -1,7 +1,8 @@
 /**
  * PtTime —— www.pttime.org PT 签到（青龙面板）
+ * 任务名：new Env('PTtime签到')
  *
- * cron: 0 8 * * *
+ * cron: 50 7 * * *
  *
  * 变量：PTTIME_COOKIE —— 站点 Cookie，多账号用 & 分隔
  *       PTTIME_UID    —— 可选，填了会在签到链接后加 ?id=（站点按 Cookie 认人，一般不用填）

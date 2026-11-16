@@ -1,6 +1,6 @@
 # qinglong-plugins
 
-青龙面板自用签到脚本，共 6 个，默认每天 08:00 执行一次（cron 写在文件头部，青龙订阅时会自动建任务）。
+青龙面板自用签到脚本，共 6 个，默认每天早上 7:50~7:55 各错开一分钟执行（写在文件头部，青龙订阅时会自动建任务）。
 
 ## 脚本一览
 
@@ -12,6 +12,26 @@
 | `azusa.js` | azusa.wiki | 无签到，只保号 | `AZUSA_COOKIE` |
 | `xianyushop.js` | api.xianyushop.shop | 每日签到领余额 | `XIANYU_REFRESH_TOKEN` |
 | `hyperdown_checkin.py` | hyperdown.net | 每日签到领流量 | `HYPERDOWN_COOKIE` |
+
+## 定时与任务名
+
+每个脚本头部声明了 `cron` 和任务名，青龙订阅同步时按声明自动建任务：
+
+| 脚本 | 任务名 | 定时 |
+|---|---|---|
+| `pttime.js` | PTtime签到 | 每天 07:50 |
+| `u2-dmhy.js` | U2动漫花园签到 | 每天 07:51 |
+| `azusa.js` | azusa保号 | 每天 07:52 |
+| `99code.js` | 99code签到 | 每天 07:53 |
+| `xianyushop.js` | 闲鱼接口API签到 | 每天 07:54 |
+| `hyperdown_checkin.py` | Hyperdown签到 | 每天 07:55 |
+
+任务名写在注释里的 `任务名：new Env('xxx')` 行（仅供青龙解析，不会执行）。没有这行声明，旧版面板会抓脚本里第一个含 `name:` 的行当任务名——`xianyushop.js` 就曾因为 `username:` 里藏着 `name:` 被命名成一段代码。
+
+两点注意：
+
+- cron 按容器时区解释，容器若是 UTC 会差 8 小时，需设置 `TZ=Asia/Shanghai`；
+- 青龙不会更新已建任务的名称和周期，改了声明后要**删掉旧任务再同步订阅**（或手动改名/改 cron）才生效。
 
 ## Cookie 怎么拿（控制台一行命令）
 

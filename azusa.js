@@ -1,7 +1,8 @@
 /**
  * azusa —— azusa.wiki PT 保号（青龙面板）
+ * 任务名：new Env('azusa保号')
  *
- * cron: 0 8 * * *
+ * cron: 52 7 * * *
  *
  * 变量：AZUSA_COOKIE —— 站点 Cookie，多账号用 & 分隔
  *

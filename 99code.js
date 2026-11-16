@@ -1,7 +1,8 @@
 /**
  * 99code —— gpt.api456.me 每日公益额度签到（青龙面板）
+ * 任务名：new Env('99code签到')
  *
- * cron: 0 8 * * *
+ * cron: 53 7 * * *
  *
  * 变量：CODE99_COOKIE —— UID=<用户ID>,session=<会话值>，多账号用 & 分隔
  *       UID：控制台 JSON.parse(localStorage.user).id

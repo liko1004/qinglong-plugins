@@ -1,7 +1,8 @@
 /**
  * 闲鱼接口 API 每日签到（青龙面板）
+ * 任务名：new Env('闲鱼接口API签到')
  *
- * cron: 0 8 * * *
+ * cron: 54 7 * * *
  *
  * 变量：XIANYU_REFRESH_TOKEN —— 浏览器登录 api.xianyushop.shop 后控制台执行
  *       localStorage.getItem('api_refresh_token')，多账号用 & 分隔
