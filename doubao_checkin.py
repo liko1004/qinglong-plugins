@@ -111,9 +111,6 @@ def notify(title, content):
 
 
 def run_one(cookie):
-    if not any(k in cookie.lower() for k in ("sessionid", "sid_tt")):
-        return {"err": "Cookie 里没有 sessionid / sid_tt，多半没复制全或已退出登录"}
-
     st, js = post(CHECKIN, cookie, {"scene": SCENE})
     if st == -1:
         return {"err": js}
@@ -125,7 +122,9 @@ def run_one(cookie):
     code = js.get("code")
     msg = js.get("msg") or js.get("message") or ""
     if code == CODE_AUTH:
-        return {"err": "登录已失效，请重新抓取 Cookie%s" % ("（%s）" % msg if msg else "")}
+        return {"err": "登录已失效%s，请重抓 Cookie：sessionid 是 HttpOnly，"
+                       "document.cookie 读不到，要从 F12 → Network → 请求头 Cookie 整行复制"
+                       % ("（%s）" % msg if msg else "")}
     if code == CODE_NO_ACTIVITY:
         return {"err": "该账号没有可领的签到活动：仅豆包个人账号参与，工作版 / 飞书企业号不支持"}
     if code != 0:

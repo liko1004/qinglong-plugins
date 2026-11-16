@@ -16,7 +16,9 @@
 
 ## Cookie 怎么拿（控制台一行命令）
 
-所有站点的套路都一样：浏览器登录后按 `F12`，切到 **Console（控制台）**，粘一行命令回车，把输出整段复制到青龙环境变量里。
+绝大多数站点的套路都一样：浏览器登录后按 `F12`，切到 **Console（控制台）**，粘一行命令回车，把输出整段复制到青龙环境变量里。
+
+> **例外是豆包**：它的 `sessionid` 标了 HttpOnly，控制台读不到，必须走 Network 面板，见下方 [doubao_checkin.py](#doubao_checkinpy--doubao_cookie) 一节。
 
 通用命令，绝大多数站点直接可用：
 
@@ -39,7 +41,7 @@ document.cookie.split('; ').filter(s => /^c_secure_/.test(s)).join('; ')
 ```
 
 > 有两点要注意：
-> - 标了 `HttpOnly` 的 Cookie 控制台读不到，这时输出会偏少甚至为空，改用 **Network → 刷新 → 任意请求 → Request Headers → `Cookie:`** 整行复制，那一段一定完整；
+> - 标了 `HttpOnly` 的 Cookie 控制台读不到，这时输出会偏少甚至为空，改用 **Network → 刷新 → 任意请求 → Request Headers → `Cookie:`** 整行复制，那一段一定完整。**豆包就是这种情况**——控制台复制出来的那份看着字段很多（`x-tt-multi-sids`、`flow_cur_user_sec_id` 一应俱全），但缺了真正管鉴权的 `sessionid`，接口一律回 `710012001 登录已过期`；
 > - 命令要在站点自己的域名页面下执行（比如 `www.pttime.org`），在别的标签页跑拿到的会是别的站点的 cookie。
 
 ## 各脚本的凭证格式
@@ -108,15 +110,24 @@ copy(localStorage.getItem('api_refresh_token'))
 
 ### doubao_checkin.py —— `DOUBAO_COOKIE`
 
-在 `www.doubao.com` 页面（不是豆包的其它子域）执行 `copy(document.cookie)`，整条粘进环境变量：
+**别用 `copy(document.cookie)`**。豆包的 `sessionid` 是 HttpOnly，控制台那份里根本没有它，粘进去必然回 `710012001`。正确姿势：
+
+1. `www.doubao.com` 登录后按 `F12`，切到 **Network**；
+2. 刷新页面，点任意一条发往 `www.doubao.com` 的请求；
+3. 右侧 **Request Headers → `Cookie:`**，把冒号后面**整行**复制进环境变量。
+
+值形如：
 
 ```
-sessionid=xxxx; sid_tt=xxxx; ttwid=xxxx; passport_csrf_token=xxxx; ...
+hook_slardar_session_id=xxxx; passport_csrf_token=xxxx; s_v_web_id=xxxx; sessionid=xxxx; sid_tt=xxxx; ttwid=xxxx; ...
 ```
+
+`sessionid` 是关键，缺它一切免谈——而且它不在控制台里，只能从请求头来。
 
 几个坑先说在前面：
 
 - **只支持个人账号**。豆包工作版和飞书企业号没有「天天领额度」这个活动，签到接口会回 `710010702`，脚本会如实报「该账号没有可领的签到活动」；
+- **飞书登录的号要留意**：Cookie 里带 `feishu_dpop_keypair` 或 `LARK_SUITE_DPOP`，说明这个豆包号是用飞书登的，多半是企业号，回 `710010702`，这种号不必再折腾；
 - **只认国内 IP**，青龙装在国内机器上直接可用，港外/海外节点多半会失败；
 - 活动页本身有「仅支持豆包电脑版参与」的前端环境检测，但**接口不校验**，纯 Cookie 就能打；
 - Cookie 通常几周～几个月失效，失效时接口回 `710012001`，脚本报「登录已失效」，重抓一次即可。
